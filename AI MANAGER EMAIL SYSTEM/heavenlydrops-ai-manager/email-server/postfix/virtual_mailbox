@@ -1,0 +1,9 @@
+# /etc/postfix/virtual_mailbox
+# Format: email_address    domain/local_part/
+# Postfix delivers to Dovecot via LMTP; the path here is logical only.
+
+info@workandstudyabroad.com.tr           workandstudyabroad.com.tr/info/
+support@workandstudyabroad.com.tr        workandstudyabroad.com.tr/support/
+sales@workandstudyabroad.com.tr          workandstudyabroad.com.tr/sales/
+admin@workandstudyabroad.com.tr          workandstudyabroad.com.tr/admin/
+noreply@workandstudyabroad.com.tr        workandstudyabroad.com.tr/noreply/

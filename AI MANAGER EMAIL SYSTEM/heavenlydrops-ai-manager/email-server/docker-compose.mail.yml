@@ -1,0 +1,180 @@
+version: '3.8'
+
+# ============================================================
+# Heavenly Drops – Mail Server Stack
+# Postfix (SMTP) + Dovecot (IMAP) + Roundcube (Webmail)
+# Domain:  mail.workandstudyabroad.com.tr
+# Webmail: https://webmail.workandstudyabroad.com.tr
+# ============================================================
+
+services:
+
+  # ── Postfix SMTP ─────────────────────────────────────────
+  postfix:
+    image: boky/postfix:latest
+    container_name: heavenlydrops-postfix
+    restart: unless-stopped
+    hostname: mail.workandstudyabroad.com.tr
+    environment:
+      HOSTNAME: mail.workandstudyabroad.com.tr
+      DOMAIN: workandstudyabroad.com.tr
+      ALLOWED_SENDER_DOMAINS: workandstudyabroad.com.tr
+      POSTFIX_myhostname: mail.workandstudyabroad.com.tr
+      POSTFIX_mydomain: workandstudyabroad.com.tr
+      POSTFIX_myorigin: workandstudyabroad.com.tr
+      POSTFIX_mydestination: "mail.workandstudyabroad.com.tr, workandstudyabroad.com.tr, localhost"
+      POSTFIX_mynetworks: "127.0.0.0/8, 172.0.0.0/8, 10.0.0.0/8"
+      POSTFIX_inet_interfaces: all
+      POSTFIX_smtpd_tls_cert_file: /etc/letsencrypt/live/mail.workandstudyabroad.com.tr/fullchain.pem
+      POSTFIX_smtpd_tls_key_file: /etc/letsencrypt/live/mail.workandstudyabroad.com.tr/privkey.pem
+      POSTFIX_smtpd_use_tls: "yes"
+      POSTFIX_smtpd_tls_auth_only: "yes"
+      POSTFIX_smtpd_sasl_auth_enable: "yes"
+      POSTFIX_smtpd_sasl_type: dovecot
+      POSTFIX_smtpd_sasl_path: "private/auth"
+      POSTFIX_smtpd_sasl_security_options: noanonymous
+      POSTFIX_smtp_tls_security_level: may
+      POSTFIX_smtp_tls_loglevel: "1"
+      POSTFIX_virtual_mailbox_domains: /etc/postfix/virtual_domains
+      POSTFIX_virtual_mailbox_maps: /etc/postfix/virtual_mailbox
+      POSTFIX_virtual_alias_maps: /etc/postfix/virtual_aliases
+      POSTFIX_virtual_transport: lmtp:unix:private/dovecot-lmtp
+      POSTFIX_mailbox_size_limit: "51200000"
+      POSTFIX_message_size_limit: "20480000"
+    ports:
+      - "25:25"      # SMTP (inbound from other MTAs)
+      - "587:587"    # Submission (authenticated outbound)
+      - "465:465"    # SMTPS (legacy SSL)
+    volumes:
+      - ./data/postfix/queue:/var/spool/postfix
+      - ./data/postfix/config:/etc/postfix/custom
+      - ./data/certs:/etc/letsencrypt:ro
+      - ./postfix/virtual_domains:/etc/postfix/virtual_domains:ro
+      - ./postfix/virtual_mailbox:/etc/postfix/virtual_mailbox:ro
+      - ./postfix/virtual_aliases:/etc/postfix/virtual_aliases:ro
+      - postfix_dovecot_socket:/var/spool/postfix/private
+    depends_on:
+      - dovecot
+    networks:
+      - mail-network
+      - heavenlydrops-network
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Dovecot IMAP ─────────────────────────────────────────
+  dovecot:
+    image: dovecot/dovecot:latest
+    container_name: heavenlydrops-dovecot
+    restart: unless-stopped
+    hostname: mail.workandstudyabroad.com.tr
+    environment:
+      DOVECOT_DISABLE_PLAINTEXT_AUTH: "yes"
+    ports:
+      - "143:143"    # IMAP (STARTTLS)
+      - "993:993"    # IMAPS (TLS)
+      - "110:110"    # POP3 (STARTTLS)
+      - "995:995"    # POP3S (TLS)
+    volumes:
+      - ./dovecot/dovecot.conf:/etc/dovecot/dovecot.conf:ro
+      - ./dovecot/conf.d:/etc/dovecot/conf.d:ro
+      - ./data/certs:/etc/letsencrypt:ro
+      - ./data/mailboxes:/var/mail/vhosts
+      - ./data/dovecot/users:/etc/dovecot/users:ro
+      - postfix_dovecot_socket:/var/spool/postfix/private
+    networks:
+      - mail-network
+    healthcheck:
+      test: ["CMD-SHELL", "doveadm log errors 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Roundcube Webmail ─────────────────────────────────────
+  roundcube:
+    image: roundcube/roundcubemail:1.6-apache
+    container_name: heavenlydrops-roundcube
+    restart: unless-stopped
+    environment:
+      ROUNDCUBEMAIL_DEFAULT_HOST: "ssl://mail.workandstudyabroad.com.tr"
+      ROUNDCUBEMAIL_DEFAULT_PORT: "993"
+      ROUNDCUBEMAIL_SMTP_SERVER: "tls://mail.workandstudyabroad.com.tr"
+      ROUNDCUBEMAIL_SMTP_PORT: "587"
+      ROUNDCUBEMAIL_DB_TYPE: pgsql
+      ROUNDCUBEMAIL_DB_HOST: postgres
+      ROUNDCUBEMAIL_DB_PORT: "5432"
+      ROUNDCUBEMAIL_DB_USER: ${DB_USERNAME:-heavenlydrops}
+      ROUNDCUBEMAIL_DB_PASSWORD: ${DB_PASSWORD}
+      ROUNDCUBEMAIL_DB_NAME: roundcube
+      ROUNDCUBEMAIL_DES_KEY: ${ROUNDCUBE_DES_KEY:-change-this-32-char-secret-key!!}
+      ROUNDCUBEMAIL_PLUGINS: "archive,zipdownload,managesieve,attachment_reminder,contextmenu"
+      ROUNDCUBEMAIL_SKIN: elastic
+      ROUNDCUBEMAIL_PRODUCT_NAME: "Heavenly Drops Webmail"
+      ROUNDCUBEMAIL_SUPPORT_URL: "mailto:support@workandstudyabroad.com.tr"
+      ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE: "20M"
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./roundcube/config/config.inc.php:/var/roundcube/config/config.inc.php:ro
+      - roundcube_temp:/tmp/roundcube-temp
+      - roundcube_logs:/var/log/roundcube
+    depends_on:
+      - dovecot
+      - postfix
+    networks:
+      - mail-network
+      - heavenlydrops-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── OpenDKIM (Email Signing) ─────────────────────────────
+  opendkim:
+    image: instrumentisto/opendkim:latest
+    container_name: heavenlydrops-opendkim
+    restart: unless-stopped
+    volumes:
+      - ./data/opendkim/keys:/etc/opendkim/keys:ro
+      - ./data/opendkim/opendkim.conf:/etc/opendkim/opendkim.conf:ro
+      - opendkim_socket:/var/run/opendkim
+    networks:
+      - mail-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep opendkim || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Certbot for mail.workandstudyabroad.com.tr ───────────
+  certbot-mail:
+    image: certbot/certbot:v2.8.0
+    container_name: heavenlydrops-certbot-mail
+    volumes:
+      - ./data/certs:/etc/letsencrypt
+      - ./data/certbot-webroot:/var/www/certbot
+    command: >
+      certonly --webroot
+      --webroot-path=/var/www/certbot
+      --email admin@workandstudyabroad.com.tr
+      --agree-tos --no-eff-email --force-renewal
+      -d mail.workandstudyabroad.com.tr
+      -d webmail.workandstudyabroad.com.tr
+    profiles:
+      - certbot-mail
+
+volumes:
+  postfix_dovecot_socket:
+  opendkim_socket:
+  roundcube_temp:
+  roundcube_logs:
+
+networks:
+  mail-network:
+    driver: bridge
+  heavenlydrops-network:
+    external: true
+    name: heavenlydrops-ai-manager_heavenlydrops-network

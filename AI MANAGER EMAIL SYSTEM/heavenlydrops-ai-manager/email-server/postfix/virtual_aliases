@@ -1,0 +1,5 @@
+# /etc/postfix/virtual_aliases
+# Aliases – useful for role addresses
+postmaster@workandstudyabroad.com.tr     admin@workandstudyabroad.com.tr
+abuse@workandstudyabroad.com.tr          admin@workandstudyabroad.com.tr
+webmaster@workandstudyabroad.com.tr      admin@workandstudyabroad.com.tr
